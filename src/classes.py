@@ -1,4 +1,8 @@
 import random
+from multiprocessing import Process, Queue, Value, Array, Manager, Pool
+import concurrent.futures
+import socket
+import select
 
 class Game:
     '''
@@ -6,6 +10,8 @@ class Game:
     '''
     def __init__(self,number_of_players):
         self.number_of_players = number_of_players
+        self.serve = True
+        self.connecting()
         """
         以下变量需要被player process请求获得
         """
@@ -14,12 +20,40 @@ class Game:
         """
         stored in a shared memory
         """
-        self.discarded_cards = [] #I suppose that in the real game, players should check the discarded cards
-        self.information_tokens = number_of_players + 3
-        self.fuse_tokens = 3
-        self.suits_in_construction = [[] for i in range(number_of_players)]
-        self.suits_completed = []
+        with Manager() as manager:
+            self.discard_pile = manager.list()
+            self.suits_in_construction = manager.list()
+            for _ in range(number_of_players):
+                self.suits_in_construction.append(manager.list())#suits_in_construction = [[],[],[],[]] if 4 players
+            self.suits_completed = manager.list()
+            self.information_tokens = Value('i',number_of_players + 3)
+            self.fuse_tokens = Value('i',3)
 
+    """
+    fuunction of connecting to player process via socket
+    """
+    def connecting(self):
+        HOST = "localhost"
+        PORT = 8848
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+                server_socket.bind((HOST, PORT))
+                server_socket.listen(self.number_of_players)
+                while self.serve:
+                    readable, _, _ = select.select([server_socket], [], [], 1)
+                    if server_socket in readable:
+                        client_socket, address = server_socket.accept()
+                        executor.submit(self.client_handler,client_socket,address)
+    
+    """
+    function of handling client socket
+    """
+    def client_handler(self,client_socket,address):
+        pass
+
+    '''
+    functions below are related to the gameplay
+    '''
     def shuffle_deck(self):
         reserved_suit =[1,1,1,2,2,3,3,4,4,5]
         reserved_deck = [(i,j) for i in range(self.number_of_players)for j in reserved_suit] #card = (color,number)
@@ -67,6 +101,14 @@ class Game:
 class Player:
     """
     """
-    def __init__(self):
+    def __init__(self,id):
+        self.player_id = id
         self.hand = [(0,0) for i in range(5)]
-        
+
+    def connect_to_game(self): 
+        HOST = "localhost"
+        PORT = 8848
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
+            client_socket.connect((HOST, PORT))
+            while True:
+                pass
