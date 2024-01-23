@@ -1,4 +1,5 @@
 from multiprocessing import Process, Queue, Value, Array, Manager, Pool
+from multiprocessing.managers import BaseManager
 import concurrent.futures
 import socket
 import select
@@ -7,7 +8,18 @@ import select
 class Game:
 
   def __init__(self):
+
+    self.manager = BaseManager(address=('localhost', 50000), authkey=b'shared')
+    self.array = Array('i', [0, 0, 0, 0, 0, 0, 0, 0])
+    
+    self.server_p = Process(target=self.server_process)
+    self.server_p.start()
+
     self.connecting(2)
+
+  def server_process(self):
+    self.server = self.manager.get_server()
+    self.server.serve_forever()
 
   def connecting(self, n):
     HOST = "localhost"
