@@ -93,14 +93,14 @@ class Game:
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.bind((HOST, PORT))
         server_socket.listen(self.number_of_players)
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            while self.gaming:
-                readable, _, _ = select.select([server_socket], [], [], 10)
-                id_player = 1
-                if server_socket in readable:
-                    client_socket, address = server_socket.accept()
-                    executor.submit(self.send_basic_infos, client_socket,
-                                    id_player)
+        executor = concurrent.futures.ProcessPoolExecutor()
+        while self.gaming:
+            readable, _, _ = select.select([server_socket], [], [], 10)
+            id_player = 1
+            if server_socket in readable:
+                client_socket, address = server_socket.accept()
+                executor.submit(self.send_basic_infos, client_socket,
+                                id_player)
 
     def ack_reception(self, client_socket):
         recv = client_socket.recv(1024).decode()
@@ -139,6 +139,10 @@ class Game:
 if __name__ == "__main__":
     game = Game(2)
     signal.signal(signal.SIGINT, game.handle_sigint)
-    game.run()
-    # with Pool(2) as pool:
-    #     pool.apply(game.run, ())
+    # game.run()
+    processes = []
+    processes.append(Process(target=game.run, args=()))
+    for p in processes:
+        p.start()
+    for p in processes:
+        p.join()
