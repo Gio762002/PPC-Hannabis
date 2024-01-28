@@ -12,11 +12,8 @@ class Game:
         self.number_of_players = number_of_players
         self.serve = True
         self.connecting()
-        """
-        以下变量需要被player process请求获得
-        """
-        self.deck = []
-        self.shuffle_deck()
+
+
         """
         stored in a shared memory
         """

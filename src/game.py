@@ -12,7 +12,7 @@ class Game:
     '''
     def __init__(self,number_of_players):
         self.number_of_players = number_of_players
-        self.serve = True
+        self.gaming = True
 
         self.deck = []
         # self.shuffle_deck()
@@ -60,6 +60,34 @@ class Game:
             shm.close()
             shm.unlink()
         
+    def run(self):
+        HOST = "localhost"
+        PORT = 8848
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+            server_socket.bind((HOST, PORT))
+            server_socket.listen(self.number_of_players)
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                while self.gaming:
+                    readable, _, _ = select.select([server_socket], [], [], 10)
+                    id_player = 1
+                    if server_socket in readable:
+                        client_socket, address = server_socket.accept()
+                        executor.submit(self.send_basic_infos, client_socket, id_player)
+
+
+    def send_basic_infos(self,client_socket,id_player):
+        with client_socket as s:
+            try :
+                s.sendall(id_player.encode())
+                s.sendall(self.shm_names["discard_pile"].encode())
+                s.sendall(self.shm_names["suits_in_construction"].encode())
+                s.sendall(self.shm_names["suits_completed"].encode())
+                s.sendall(self.shm_names["information_tokens"].encode())
+                s.sendall(self.shm_names["fuse_tokens"].encode())
+            except Exception as e:
+                print("Error sending basic infos: ", e)
+
+
 
 if __name__ == "__main__":
     game = Game(2)
