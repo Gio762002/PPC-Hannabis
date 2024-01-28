@@ -28,24 +28,9 @@ class Player:
         print("start receiving basic infos")
         s = client_socket
         try:
-            id_player = struct.unpack("i", s.recv(1024))[0]
+            self.id_player = struct.unpack("i", s.recv(1024))[0]
             self.ack_send(s)
-            print(id_player)
-            discard_pile_name = s.recv(1024).decode()
-            self.ack_send(s)
-            print(discard_pile_name)
-            suits_in_construction_name = s.recv(1024).decode()
-            self.ack_send(s)
-            print(suits_in_construction_name)
-            suits_completed_name = s.recv(1024).decode()
-            self.ack_send(s)
-            print(suits_completed_name)
-            information_tokens_name = s.recv(1024).decode()
-            self.ack_send(s)
-            print(information_tokens_name)
-            fuse_tokens_name = s.recv(1024).decode()
-            self.ack_send(s)
-            print(fuse_tokens_name)
+
         except Exception as e:
             print("Error receiving basic infos: ", e)
         else:

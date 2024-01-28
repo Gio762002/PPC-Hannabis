@@ -87,7 +87,7 @@ class Game:
             shm.close()
             shm.unlink()
 
-    def run(self):
+    def socket_connection(self):
         HOST = "localhost"
         PORT = 8848
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -112,16 +112,6 @@ class Game:
             try:
                 s.sendall(struct.pack("i", id_player))
                 self.ack_reception(s)
-                s.sendall(self.shm_names["discard_pile"].encode())
-                self.ack_reception(s)
-                s.sendall(self.shm_names["suits_in_construction"].encode())
-                self.ack_reception(s)
-                s.sendall(self.shm_names["suits_completed"].encode())
-                self.ack_reception(s)
-                s.sendall(self.shm_names["information_tokens"].encode())
-                self.ack_reception(s)
-                s.sendall(self.shm_names["fuse_tokens"].encode())
-                self.ack_reception(s)
             except Exception as e:
                 print("Error sending basic infos: ", e)
 
@@ -141,7 +131,7 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, game.handle_sigint)
     # game.run()
     processes = []
-    processes.append(Process(target=game.run, args=()))
+    processes.append(Process(target=game.socket_connection, args=()))
     for p in processes:
         p.start()
     for p in processes:
