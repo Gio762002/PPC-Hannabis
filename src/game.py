@@ -1,6 +1,8 @@
 import random
-from multiprocessing import Process, Queue, shared_memory
+from multiprocessing import Process, Queue, shared_memory, Pool
 import concurrent.futures
+import signal
+import sys
 import socket
 import select
 import numpy as np
@@ -20,8 +22,6 @@ class Game:
         # self.shuffle_deck()
         self.create_shared_memory()
         print(self.shm_names)
-        self.run()
-        self.delete_shared_memory()
 
     def create_shared_memory(self):
         card_type = np.dtype([('color', np.uint8), ('number', np.uint8)])
@@ -90,18 +90,17 @@ class Game:
     def run(self):
         HOST = "localhost"
         PORT = 8848
-        with socket.socket(socket.AF_INET,
-                           socket.SOCK_STREAM) as server_socket:
-            server_socket.bind((HOST, PORT))
-            server_socket.listen(self.number_of_players)
-            with concurrent.futures.ProcessPoolExecutor() as executor:
-                while self.gaming:
-                    readable, _, _ = select.select([server_socket], [], [], 10)
-                    id_player = 1
-                    if server_socket in readable:
-                        client_socket, address = server_socket.accept()
-                        executor.submit(self.send_basic_infos, client_socket,
-                                        id_player)
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.bind((HOST, PORT))
+        server_socket.listen(self.number_of_players)
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            while self.gaming:
+                readable, _, _ = select.select([server_socket], [], [], 10)
+                id_player = 1
+                if server_socket in readable:
+                    client_socket, address = server_socket.accept()
+                    executor.submit(self.send_basic_infos, client_socket,
+                                    id_player)
 
     def ack_reception(self, client_socket):
         recv = client_socket.recv(1024).decode()
@@ -126,6 +125,20 @@ class Game:
             except Exception as e:
                 print("Error sending basic infos: ", e)
 
+    def handle_sigint(self, signal, frame):
+        if self.gaming:
+            print("releasing shared memory before exiting")
+            self.gaming = False
+            try:
+                self.delete_shared_memory()
+                exit(0)
+            except Exception as e:
+                print("")
+
 
 if __name__ == "__main__":
     game = Game(2)
+    signal.signal(signal.SIGINT, game.handle_sigint)
+    game.run()
+    # with Pool(2) as pool:
+    #     pool.apply(game.run, ())
