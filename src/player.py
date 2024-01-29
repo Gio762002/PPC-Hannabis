@@ -28,6 +28,26 @@ class Player:
         print("connected to game host")
         self.receive_basic_infos()
 
+    def attach_to_shm(self):
+        self.shm_pool = []
+        self.suits = sysv_ipc.SharedMemory(300, sysv_ipc.IPC_CREAT,
+                                           5 * self.nb_players)
+        self.shm_pool.append(self.suits)
+
+        self.information_tokens = sysv_ipc.SharedMemory(
+            301, sysv_ipc.IPC_CREAT, 1)
+        self.shm_pool.append(self.information_tokens)
+
+        self.fuse_tokens = sysv_ipc.SharedMemory(302, sysv_ipc.IPC_CREAT, 1)
+        self.shm_pool.append(self.fuse_tokens)
+
+        for shm in self.shm_pool:
+            shm.attach()
+
+    def release_shared_memory(self):
+        for shm in self.shm_pool:
+            shm.detach()
+
     def connect_to_mq(self):
         self.objects_dict = {}
         for i in range(self.nb_players):
@@ -84,10 +104,13 @@ class Player:
 
     def play_card(self):
         value = self.draw_card()
+        #需要从game获得是否allow的结果，通过socket传入player的socket进程，再通过管道传入主进程
         self.update_hand(value)
 
     def give_information(self):
         chat.chat_process(128, 1, self.nb_players)
+        old = self.information_tokens.read(1)
+        self.information_tokens.write((old - 1).encode)  #consume one token
 
     def draw_card(self):
 
@@ -120,3 +143,4 @@ if __name__ == "__main__":
         pool.apply_async(player.connect_to_game, ())
         pool.apply_async(player.connect_to_mq, ())
         pool.apply_async(player.play_game, ())
+    

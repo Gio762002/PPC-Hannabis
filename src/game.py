@@ -39,6 +39,10 @@ class Game:
         for shm in self.shm_pool:
             shm.attach()
 
+    def release_shared_memory(self):
+        for shm in self.shm_pool:
+            shm.detach()
+
     def socket_connection(self):
         HOST = "localhost"
         PORT = 8848
