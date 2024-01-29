@@ -11,23 +11,81 @@ import sysv_ipc
 class Player:
 
     def __init__(self):
-        self.shm = None
         self.nb_players = 4
         self.gaming = True  # True represents that the game is running
+        
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.queue = None
+        self.interqueue = Queue()# a queue for inter-process communication
+
+        
         self.hands = {1: [], 2: [], 3: [], 4: []}
         self.tokens_information = self.nb_players + 3
         self.tokens_fuse = 0
-
+          
+    
     def connect_to_game(self):
         HOST = "localhost"
         PORT = 8848
-        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_socket.connect((HOST, PORT))
         print("connected to game host")
-        self.receive_basic_infos()
+        self.ack = False
+        self.init_game()
+        self.interp_com()
 
-    def connect_to_mq(self):
+
+    def ack(self,send = True):
+        if send :
+            self.client_socket.sendall(b"ack")
+        else:
+            self.client_socket.recv(10).decode()
+            
+    def init_game(self):
+        print("start initializing, please wait")
+        # receiving the number of players and player id
+        try:
+            self.nb_players = self.client_socket.recv(10).decode()
+        except Exception as e:
+            print("Error getting number of players: ", e)
+        else:
+            self.ack(True)
+            print("game begins, you are one of the ",self.nb_players," players,",end=' ')
+        
+        try:
+            self.player_id = struct.unpack("i",
+                                           self.client_socket.recv(1024))[0]
+        except Exception as e:
+            print("Error getting player id : ", e)
+        else:
+            self.ack(True)
+            print("you are player no.",self.player_id)
+
+        # dealing five cards
+        try:
+            data = self.client_socket.recv(1024).decode(). #something like "(1,2),(0,3),(0,4),(2,1),(1,5)"
+            tuplized = data.replace("(", "").replace(")", "").split(",")
+            my_hand = [tuple(map(int, tpl.split(','))) for tpl in tuplized]
+            self.hands[self.player_id] = my_hand
+        except Exception as e:
+            print("Error getting hand : ", e)
+        else:
+            self.ack(True)
+        
+
+        
+
+    def interp_com(self):
+        while True:
+            try:
+                if not self.interqueue.empty():  # Check if the queue is not empty
+                    req = self.interqueue.get_nowait() # or queue.get()
+                    if req == "draw":
+                        self.client_socket.sendall(req.encode())
+                        res = self.client_socket.recv(10)
+                        res = res.decode()
+                        self.interqueue.put(res)
+                        
+    def connect_to_mq(self): # connect to the queue created by game for exchanging information between processes
         self.objects_dict = {}
         for i in range(self.nb_players):
             object_name = f'object_{i}'
@@ -37,22 +95,8 @@ class Player:
     def send_via_mq(self, message, type):
         pass
 
-    def ack_send(self):
-        self.client_socket.sendall("ack".encode())
-        print("ack sent")
 
-    def receive_basic_infos(self):
-        print("start receiving basic infos")
-        self.client_socket
-        try:
-            self.id_player = struct.unpack("i",
-                                           self.client_socket.recv(1024))[0]
-            self.ack_send()
 
-        except Exception as e:
-            print("Error receiving basic infos: ", e)
-        else:
-            print("received basic infos")
 
     def send_via_socket(self):
         try:
@@ -152,8 +196,10 @@ class Player:
             break
 
     def draw_card(self):
-
-        pass
+        self.interqueue.put('draw')
+        new_card = self.interqueue.get() 
+        return (new_card) # new_card is like "2,3"
+        # use new_card to replace the card that has been used
 
     def update_hand(self, value):
         #value 是socket 传过来的新牌信息

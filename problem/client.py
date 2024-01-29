@@ -1,5 +1,7 @@
 import socket
 from multiprocessing import Process
+import sys
+import signal
 
 
 class client:
@@ -28,8 +30,21 @@ class client:
             print("sent")
             m = input("message> ")
 
+    def cleanup_before_exit(self, signal, frame):
+        print("Cleaning up before exit...")
+
+        try:
+            self.client_socket.close()
+            pass
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+
+        sys.exit(0)
+
 
 if __name__ == "__main__":
+    
     c = client()
+    signal.signal(signal.SIGINT, c.cleanup_before_exit)
     c.connect_to_game()
     c.send()

@@ -3,6 +3,8 @@ import concurrent.futures
 import select
 import time
 from multiprocessing import Process
+import sys
+import signal
 
 
 class server():
@@ -50,9 +52,21 @@ class server():
             print(n)
             time.sleep(1)
 
+    def cleanup_before_exit(self, signal, frame):
+        print("Cleaning up before exit...")
+
+        try:
+            self.server_socket.close()
+            pass
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+
+        sys.exit(0)
+
 
 if __name__ == "__main__":
     game = server()
+    signal.signal(signal.SIGINT, game.cleanup_before_exit)
     processes = []
     processes.append(Process(target=game.socket_connection, args=()))
     processes.append(Process(target=game.count, args=()))
