@@ -6,7 +6,6 @@ import select
 import numpy as np
 import struct
 import sysv_ipc
-import chat
 
 
 class Player:
@@ -27,26 +26,6 @@ class Player:
         self.client_socket.connect((HOST, PORT))
         print("connected to game host")
         self.receive_basic_infos()
-
-    def attach_to_shm(self):
-        self.shm_pool = []
-        self.suits = sysv_ipc.SharedMemory(300, sysv_ipc.IPC_CREAT,
-                                           5 * self.nb_players)
-        self.shm_pool.append(self.suits)
-
-        self.information_tokens = sysv_ipc.SharedMemory(
-            301, sysv_ipc.IPC_CREAT, 1)
-        self.shm_pool.append(self.information_tokens)
-
-        self.fuse_tokens = sysv_ipc.SharedMemory(302, sysv_ipc.IPC_CREAT, 1)
-        self.shm_pool.append(self.fuse_tokens)
-
-        for shm in self.shm_pool:
-            shm.attach()
-
-    def release_shared_memory(self):
-        for shm in self.shm_pool:
-            shm.detach()
 
     def connect_to_mq(self):
         self.objects_dict = {}
@@ -104,13 +83,73 @@ class Player:
 
     def play_card(self):
         value = self.draw_card()
-        #需要从game获得是否allow的结果，通过socket传入player的socket进程，再通过管道传入主进程
         self.update_hand(value)
 
+    #execute connect_to_mq before give_information
     def give_information(self):
-        chat.chat_process(128, 1, self.nb_players)
-        old = self.information_tokens.read(1)
-        self.information_tokens.write((old - 1).encode)  #consume one token
+        while True:
+            try:
+
+                while True:
+                    name_players = input(
+                        "Give information for (1:player 1, 2: player 2): ")
+                    try:
+                        if int(name_players) <= self.nb_players and int(
+                                name_players) > 0:
+                            break
+                        else:
+                            print("Please enter a valid number")
+
+                    except Exception as e:
+                        print("Please enter a correct number!")
+                        continue
+
+                while True:
+                    color_number = input(
+                        "Please give a color or a number of cards: ")
+                    try:
+                        if color_number in [
+                                "1", "2", "3", "4", "5", "blue", "red",
+                                "green", "purple", "orange", "yellow", "white",
+                                "black"
+                        ]:
+                            break
+                        else:
+                            print("Please enter a valid color or number")
+
+                    except Exception as e:
+                        print("Please enter a correct number!")
+                        continue
+
+                while True:
+                    nb = input("How many cards are the same color or number: ")
+                    try:
+                        if int(nb) < 5 and int(nb) > 0:
+                            break
+                        else:
+                            print("Please enter a valid number")
+
+                    except Exception as e:
+                        print("Please enter a correct number!")
+                        continue
+                value = "Player " + str(name_players) + " has " + str(
+                    nb) + " " + str(color_number) + " cards"
+
+            except EOFError:
+                break
+            except Exception as e:
+                print("Input error:", e)
+                continue
+
+            message = str(value).encode()
+            for name, obj in self.objects_dict.items():
+                obj.send(message)
+
+            message = "exit".encode()
+            for name, obj in self.objects_dict.items():
+                obj.send(message)
+
+            break
 
     def draw_card(self):
 
@@ -128,7 +167,6 @@ class Player:
             obj.send(message, type=2)
 
     def display(self):
-        self.hands = {1: [], 2: [], 3: [], 4: []}
         for nb, cards in self.hands.items():
             print(f"Player {nb} hand: {cards}")
         print("token information: ", self.tokens_information)
@@ -143,4 +181,3 @@ if __name__ == "__main__":
         pool.apply_async(player.connect_to_game, ())
         pool.apply_async(player.connect_to_mq, ())
         pool.apply_async(player.play_game, ())
-    

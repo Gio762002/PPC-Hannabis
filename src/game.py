@@ -15,6 +15,7 @@ class Game:
     def __init__(self, number_of_players):
         self.number_of_players = number_of_players
         self.gaming = True
+        self.queue = 128
 
         self.deck = []
         # self.shuffle_deck()
@@ -38,10 +39,6 @@ class Game:
 
         for shm in self.shm_pool:
             shm.attach()
-
-    def release_shared_memory(self):
-        for shm in self.shm_pool:
-            shm.detach()
 
     def socket_connection(self):
         HOST = "localhost"
@@ -87,6 +84,9 @@ class Game:
             return [self.deck.pop(0) for i in range(5)]
         else:
             return self.deck.pop(0)
+
+    def connect_to_message_queue(self):
+        mq = sysv_ipc.MessageQueue(self.queue, sysv_ipc.IPC_CREAT)
 
 
 if __name__ == "__main__":
