@@ -6,6 +6,7 @@ import select
 import numpy as np
 import struct
 import sysv_ipc
+import chat
 
 
 class Player:
@@ -16,6 +17,8 @@ class Player:
         self.gaming = True  # True represents that the game is running
         self.queue = None
         self.hands = {1: [], 2: [], 3: [], 4: []}
+        self.tokens_information = self.nb_players + 3
+        self.tokens_fuse = 0
 
     def connect_to_game(self):
         HOST = "localhost"
@@ -26,10 +29,10 @@ class Player:
         self.receive_basic_infos()
 
     def connect_to_mq(self):
-        objects_dict = {}
+        self.objects_dict = {}
         for i in range(self.nb_players):
             object_name = f'object_{i}'
-            objects_dict[object_name] = sysv_ipc.MessageQueue(
+            self.objects_dict[object_name] = sysv_ipc.MessageQueue(
                 self.queue, sysv_ipc.IPC_CREAT)
 
     def send_via_mq(self, message, type):
@@ -80,23 +83,40 @@ class Player:
             self.give_information()
 
     def play_card(self):
-        self.draw_card()
-        self.update_hand()
+        value = self.draw_card()
+        self.update_hand(value)
 
     def give_information(self):
-        pass
+        chat.chat_process(128, 1, self.nb_players)
 
     def draw_card(self):
 
         pass
 
-    def update_hand(self):
-        pass
+    def update_hand(self, value):
+        #value 是socket 传过来的新牌信息
+        message = str(value).encode()
+        for name, obj in self.objects_dict.items():
+            obj.send(message, type=2)
+
+    def update_tokens(self, value):
+        message = str(value).encode()
+        for name, obj in self.objects_dict.items():
+            obj.send(message, type=2)
+
+    def display(self):
+        self.hands = {1: [], 2: [], 3: [], 4: []}
+        for nb, cards in self.hands.items():
+            print(f"Player {nb} hand: {cards}")
+        print("token information: ", self.tokens_information)
+        print("token fuse: ", self.tokens_fuse)
+        print("constructing suits: ", )
 
 
 if __name__ == "__main__":
     player = Player()
     with Pool(2) as pool:
-        pool.apply(player.connect_to_game, ())
-        pool.apply(player.connect_to_mq, ())
-        pool.apply(player.play_game, ())
+        pool.apply_async(player.display, ())
+        pool.apply_async(player.connect_to_game, ())
+        pool.apply_async(player.connect_to_mq, ())
+        pool.apply_async(player.play_game, ())

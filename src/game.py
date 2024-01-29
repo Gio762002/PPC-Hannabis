@@ -76,7 +76,9 @@ class Game:
         self.deck = reserved_deck
 
     def distribute_card(self, init=False):
-        """distibute a card to a player, if init is True, distribute 5 cards to each player, means the game is just started"""
+        """
+        distibute a card to a player, if init is True, distribute 5 cards to each player, means the game is just started
+        """
         if init:
             return [self.deck.pop(0) for i in range(5)]
         else:
