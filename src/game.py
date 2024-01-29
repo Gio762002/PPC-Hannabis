@@ -1,4 +1,4 @@
-from multiprocessing import Process
+from multiprocessing import Process, Queue
 import concurrent.futures
 import socket
 import select
@@ -15,7 +15,9 @@ class Game:
     def __init__(self, number_of_players):
         self.number_of_players = number_of_players
         self.gaming = True
-        self.queue = 128
+        self.queuekey = 128
+        self.interqueue = Queue()
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         self.deck = []
         # self.shuffle_deck()
@@ -43,30 +45,50 @@ class Game:
     def socket_connection(self):
         HOST = "localhost"
         PORT = 8848
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.bind((HOST, PORT))
-        server_socket.listen(self.number_of_players)
+
+        self.server_socket.bind((HOST, PORT))
+        self.server_socket.listen(self.number_of_players)
         executor = concurrent.futures.ProcessPoolExecutor()
         while self.gaming:
-            readable, _, _ = select.select([server_socket], [], [], 10)
+            readable, _, _ = select.select([self.server_socket], [], [], 10)
             id_player = 1
-            if server_socket in readable:
-                client_socket, address = server_socket.accept()
-                executor.submit(self.send_basic_infos, client_socket,
-                                id_player)
+            if self.server_socket in readable:
+                client_socket, address = self.server_socket.accept()
+                executor.submit(self.init_game, client_socket, id_player)
+                id_player += 1
+                executor.submit(self.holding, client_socket)
 
-    def ack_reception(self, client_socket):
-        recv = client_socket.recv(1024).decode()
-        if recv == "ack":
-            print("ack received")
+    def ack(self, s):
+        while True:
+            recv = s.recv(1024).decode()
+            if recv == "ack":
+                break
 
-    def send_basic_infos(self, client_socket, id_player):
+    def holding(self, s):
+        while True:
+            try:
+            #     if not self.interqueue.empty(
+            #     ):  # Check if the queue is not empty
+            #         req = self.interqueue.get_nowait()  # or queue.get()
+            #         if req == "draw":
+            #             self.s.sendall(req.encode())
+            #             res = self.s.recv(10)
+            #             res = res.decode()
+            #             self.interqueue.put(res)
+            # except Exception as e:
+            #     print("Error in interprocess communication: ", e)
+
+    def init_game(self, client_socket, id_player):
         with client_socket as s:
             try:
+                s.sendall(struct.pack("i", self.number_of_players))
                 s.sendall(struct.pack("i", id_player))
-                self.ack_reception(s)
+                self.ack(s)
+                cards = str(self.distribute_card(True))[1:-1]
+                s.sendall(cards.encode())
+                self.ack(s)
             except Exception as e:
-                print("Error sending basic infos: ", e)
+                print("Error initializing the game : ", e)
 
     def shuffle_deck(self):
         reserved_suit = [1, 1, 1, 2, 2, 3, 3, 4, 4, 5]
@@ -86,7 +108,7 @@ class Game:
             return self.deck.pop(0)
 
     def connect_to_message_queue(self):
-        mq = sysv_ipc.MessageQueue(self.queue, sysv_ipc.IPC_CREAT)
+        mq = sysv_ipc.MessageQueue(self.queuekey, sysv_ipc.IPC_CREAT)
 
 
 if __name__ == "__main__":
