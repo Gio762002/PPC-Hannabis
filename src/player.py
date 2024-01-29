@@ -32,6 +32,9 @@ class Player:
             objects_dict[object_name] = sysv_ipc.MessageQueue(
                 self.queue, sysv_ipc.IPC_CREAT)
 
+    def send_via_mq(self, message, type):
+        pass
+
     def ack_send(self):
         self.client_socket.sendall("ack".encode())
         print("ack sent")
