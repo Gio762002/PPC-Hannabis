@@ -13,17 +13,30 @@ class Player:
     def __init__(self):
         self.nb_players = 4
         self.gaming = True  # True represents that the game is running
-        
+
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.queue = None
-        self.interqueue = Queue()# a queue for inter-process communication
+        self.interqueue = Queue()  # a queue for inter-process communication
 
-        
         self.hands = {1: [], 2: [], 3: [], 4: []}
-        self.tokens_information = self.nb_players + 3
-        self.tokens_fuse = 0
-          
-    
+
+
+    def attach_to_shm(self):
+        self.shm_pool = []
+        self.suits = sysv_ipc.SharedMemory(300, sysv_ipc.IPC_CREAT,
+                                           5 * self.nb_players)
+        self.shm_pool.append(self.suits)
+
+        self.information_tokens = sysv_ipc.SharedMemory(301, sysv_ipc.IPC_CREAT, 1)
+        self.shm_pool.append(self.information_tokens)
+
+        self.fuse_tokens = sysv_ipc.SharedMemory(302, sysv_ipc.IPC_CREAT, 1)
+        self.shm_pool.append(self.fuse_tokens)
+
+        for shm in self.shm_pool:
+            shm.attach()
+            
+            
     def connect_to_game(self):
         HOST = "localhost"
         PORT = 8848
@@ -33,70 +46,72 @@ class Player:
         self.init_game()
         self.interp_com()
 
-
-    def ack(self,send = True):
-        if send :
+    def ack(self, send=True):
+        if send:
             self.client_socket.sendall(b"ack")
         else:
             self.client_socket.recv(10).decode()
-            
+
     def init_game(self):
         print("start initializing, please wait")
         # receiving the number of players and player id
         try:
-            self.nb_players = self.client_socket.recv(10).decode()
+            self.nb_players = struct.unpack("i",
+                                            self.client_socket.recv(10))[0]
         except Exception as e:
             print("Error getting number of players: ", e)
         else:
             self.ack(True)
-            print("game begins, you are one of the ",self.nb_players," players,",end=' ')
-        
+            print("game begins, you are one of the ",
+                  self.nb_players,
+                  " players,",
+                  end=' ')
+
         try:
-            self.player_id = struct.unpack("i",
-                                           self.client_socket.recv(1024))[0]
+            self.player_id = struct.unpack("i", self.client_socket.recv(10))[0]
         except Exception as e:
             print("Error getting player id : ", e)
         else:
             self.ack(True)
-            print("you are player no.",self.player_id)
+            print("you are player no.", self.player_id)
 
         # dealing five cards
         try:
-            data = self.client_socket.recv(1024).decode(). #something like "(1,2),(0,3),(0,4),(2,1),(1,5)"
-            tuplized = data.replace("(", "").replace(")", "").split(",")
-            my_hand = [tuple(map(int, tpl.split(','))) for tpl in tuplized]
-            self.hands[self.player_id] = my_hand
+            data = self.client_socket.recv(
+                1024).decode()  #something like "(1,2),(0,3),(0,4),(2,1),(1,5)"
+            self.hands[self.player_id] = self.convert_dataflow_to_list(data)
         except Exception as e:
             print("Error getting hand : ", e)
         else:
             self.ack(True)
-        
-
-        
 
     def interp_com(self):
         while True:
             try:
-                if not self.interqueue.empty():  # Check if the queue is not empty
-                    req = self.interqueue.get_nowait() # or queue.get()
+                if not self.interqueue.empty(
+                ):  # Check if the queue is not empty
+                    req = self.interqueue.get_nowait()  # or queue.get()
                     if req == "draw":
                         self.client_socket.sendall(req.encode())
                         res = self.client_socket.recv(10)
                         res = res.decode()
                         self.interqueue.put(res)
-                        
-    def connect_to_mq(self): # connect to the queue created by game for exchanging information between processes
+            except Exception as e:
+                print("Error in interprocess communication: ", e)
+
+    def connect_to_mq(
+        self
+    ):  # connect to the queue created by game for exchanging information between processes
         self.objects_dict = {}
         for i in range(self.nb_players):
             object_name = f'object_{i}'
             self.objects_dict[object_name] = sysv_ipc.MessageQueue(
                 self.queue, sysv_ipc.IPC_CREAT)
 
+    def 
+
     def send_via_mq(self, message, type):
         pass
-
-
-
 
     def send_via_socket(self):
         try:
@@ -110,6 +125,8 @@ class Player:
 
     def play_game(self):
         while self.gaming == True:
+            # before every turn starts, update hands.
+            self.update_hand(self.update_hand)
             if self.turn == 0:  #TODO write the veriifcation of the turn
                 self.play_turn()
 
@@ -197,20 +214,24 @@ class Player:
 
     def draw_card(self):
         self.interqueue.put('draw')
-        new_card = self.interqueue.get() 
-        return (new_card) # new_card is like "2,3"
+        new_card = self.interqueue.get()
+        return (new_card)  # new_card is like "2,3"
         # use new_card to replace the card that has been used
 
-    def update_hand(self, value):
-        #value 是socket 传过来的新牌信息
-        message = str(value).encode()
+    def update_hand(self, new_hand):  #是不是应该明确谁是发送者
+        # new_hand is like "(1,2),(0,3),(0,4),(2,1),(1,5)"
+        message = str(new_hand).encode()
         for name, obj in self.objects_dict.items():
             obj.send(message, type=2)
 
-    def update_tokens(self, value):
-        message = str(value).encode()
-        for name, obj in self.objects_dict.items():
-            obj.send(message, type=2)
+    def get_update_hand(self):
+        pass  #TODO 接收更新，默认在每个回合开始前调用一次，包括游戏开始之初。
+
+    # def update_tokens(self, value):
+    #     message = str(value).encode()
+    #     for name, obj in self.objects_dict.items():
+    #         obj.send(message, type=2)
+    #不用特意写成函数，因为是shm随时可用
 
     def display(self):
         for nb, cards in self.hands.items():
@@ -218,6 +239,10 @@ class Player:
         print("token information: ", self.tokens_information)
         print("token fuse: ", self.tokens_fuse)
         print("constructing suits: ", )
+
+    def convert_dataflow_to_list(self, flow):
+        tuplized = flow.replace("(", "").replace(")", "").split(",")
+        return ([tuple(map(int, tpl.split(','))) for tpl in tuplized])
 
 
 if __name__ == "__main__":
