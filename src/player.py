@@ -23,7 +23,7 @@ class Player:
 
         signal.signal(signal.SIGUSR1, self.handle_win)
         signal.signal(signal.SIGUSR2, self.handle_loss)
-        self.end = Event()
+        # self.end = Event()
 
     def attach_to_shm(self):
         self.shm_pool = []
@@ -46,8 +46,9 @@ class Player:
         PORT = 8848
         self.client_socket.connect((HOST, PORT))
         print("connected to game host")
-        self.ack = False
+        self.ack()
         self.init_game()
+
         with concurrent.futures.ThreadPoolExecutor() as executor:
             executor.submit(self.holding)
             executor.submit(self.holding2)
@@ -90,21 +91,24 @@ class Player:
             print("Error getting hand : ", e)
         else:
             self.ack(True)
+        self.client_socket.sendall(str(os.getpid()).encode())
 
     def holding(self):
         while self.gaming:
             self.draw_req.wait()
+            self.client_socket.sendall(str(self.old_card).encode())
+            res = self.client_socket.recv(10).decode()
+            if res == "success":
+                print('you succeed playing your card')
+            elif res == "fail":
+                print('you failed playing your card')
             self.client_socket.sendall(b"draw")
             data = self.client_socket.recv(10)
             self.new_card = data.decode()
             self.draw_req.clear()
 
-    def holding2(self):
-        while self.gaming:
-            self.end.wait()
-            self.client_socket.sendall(b'end')
-            self.end.clear()
-            self.gaming = False
+    # def holding2(self):
+    #     pass
 
     def connect_to_mq(self):
         # connect to the queue created by game for exchanging information between processes
@@ -113,9 +117,6 @@ class Player:
             object_name = f'object_{i}'
             self.objects_dict[object_name] = sysv_ipc.MessageQueue(
                 self.queue, sysv_ipc.IPC_CREAT)
-
-    def send_via_mq(self, message, type):
-        pass
 
     def send_via_socket(self):
         try:
@@ -148,10 +149,10 @@ class Player:
 
     def play_card(self):
         old_card_indice = self.choose_card()
+        self.old_card = self.hands[self.player_id][old_card_indice]
         new_card = self.draw_card()
         self.replace_card(old_card_indice, new_card)
         self.update_hand()
-        self.check_if_added_to_suit(new_card)
 
     def choose_card(self):
         while True:
@@ -193,44 +194,6 @@ class Player:
 
     def get_update_hand(self):
         pass  #TODO 接收更新，默认在每个回合开始前调用一次，包括游戏开始之初。
-
-    def check_if_added_to_suit(self, new_card):
-        (color, number) = new_card
-        top_on_suit = []
-        bottoms = [0, 5, 10, 15, 20, 25, 30, 35]
-        for i in bottoms:
-            j = i
-            while True:
-                now = self.suits.read(1, j)
-                if now != ' ':
-                    j += 1
-                else:
-                    top_on_suit.append((i / 5, j - i))
-                    break
-        for (topcolor, topnumber) in top_on_suit:
-            if topcolor == color:
-                if topnumber == number - 1:  # success
-                    self.suits.write(b'1', topcolor * 5 + topnumber + 1)
-                    ind = top_on_suit.index(topcolor, topnumber)
-                    top_on_suit[ind] = (topcolor, number)
-                    # we dont need to write the value, just sth != ' '
-                    if number == 5:
-                        information_tokens = int(
-                            self.information_tokens.read(1))
-                        self.information_tokens.write(
-                            f'{information_tokens+1}'.encode)
-                else:
-                    fuse_tokens = int(self.fuse_tokens.read(1))
-                    self.fuse_tokens.write(f'{fuse_tokens-1}'.encode)
-                    if fuse_tokens - 1 <= 0:
-                        os.kill(os.getpid(), signal.SIGUSR2)
-        win = True
-        for (_, topnumber) in top_on_suit:
-            if topnumber != 5:
-                win = False
-                break
-        if win:
-            os.kill(os.getpid(), signal.SIGUSR1)
 
     def give_information(self):
         while True:
@@ -304,13 +267,13 @@ class Player:
         print("token fuse: ", self.fuse_tokens)
         print("constructing suits: ", )
 
-    def handle_win(self, sig, frame):
-        self.end.set()
-        print("you won, the game ends")
+    # def handle_win(self, sig, frame):
+    #     self.end.set()
+    #     print("you won, the game ends")
 
-    def handle_loss(self, sig, frame):
-        self.end.set()
-        print("you lose, the game ends")
+    # def handle_loss(self, sig, frame):
+    #     self.end.set()
+    #     print("you lose, the game ends")
 
     def convert_dataflow_to_list(self, flow):
         tuplized = flow.replace("(", "").replace(")", "").split(",")
