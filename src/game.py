@@ -28,17 +28,17 @@ class Game:
 
     def create_shared_memory(self):
         self.shm_pool = []
-        self.suits = sysv_ipc.SharedMemory(300, sysv_ipc.IPC_CREX,
+        self.suits = sysv_ipc.SharedMemory(300, sysv_ipc.IPC_CREAT,
                                            5 * self.number_of_players)
         self.shm_pool.append(self.suits)
 
         self.information_tokens = sysv_ipc.SharedMemory(
-            301, sysv_ipc.IPC_CREX, 1)
+            301, sysv_ipc.IPC_CREAT, 1)
         itok = self.number_of_players + 3
         self.information_tokens.write(struct.pack('i', itok))
         self.shm_pool.append(self.information_tokens)
 
-        self.fuse_tokens = sysv_ipc.SharedMemory(302, sysv_ipc.IPC_CREX, 1)
+        self.fuse_tokens = sysv_ipc.SharedMemory(302, sysv_ipc.IPC_CREAT, 1)
         self.fuse_tokens.write(b'3')
         self.shm_pool.append(self.fuse_tokens)
 
