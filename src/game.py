@@ -159,6 +159,7 @@ class Game:
                     if fuse_tokens - 1 <= 0:
                         for pid in self.pidlist:
                             os.kill(pid, signal.SIGUSR2)
+                            self.end_game()
         win = True
         for (_, topnumber) in top_on_suit:
             if topnumber != 5:
@@ -167,6 +168,7 @@ class Game:
         if win:
             for pid in self.pidlist:
                 os.kill(pid, signal.SIGUSR1)
+                self.end_game()
 
     def cleanup_before_exit(self, signal, frame):
         try:

@@ -51,7 +51,7 @@ class Player:
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             executor.submit(self.holding)
-            executor.submit(self.holding2)
+            # executor.submit(self.holding2)
 
     def ack(self, send=True):
         if send:
@@ -126,17 +126,26 @@ class Player:
 
     def is_my_turn(self):
         # read from message queue
-        self.turn = 0
+        mq = sysv_ipc.MessageQueue(self.queue, type=3)
+        self.get_update_hand()
+        while True:
+            message, _ = mq.receive()
+            value = message.decode()
+            if int(value) == self.player_id:
+                self.turn = 0
+            if not value:
+                continue
 
     def play_game(self):
         while self.gaming == True:
             # before every turn starts, update hands.
-            self.get_update_hand()
+            self.is_my_turn()
             if self.turn == 0:  #TODO write the veriifcation of the turn
                 self.play_turn()
 
     def play_turn(self):
         action_type = 0
+        self.display()
         while action_type not in ['1', '2']:
             action_type = input(
                 "Please choose an action: (1:play a card, 2:give information)")
@@ -153,6 +162,14 @@ class Player:
         new_card = self.draw_card()
         self.replace_card(old_card_indice, new_card)
         self.update_hand()
+
+        if self.player_id == self.nb_players:
+            message2 = str(1).encode()
+        else:
+            message2 = str(self.player_id + 1).encode()
+
+        for name, obj in self.objects_dict.items():
+            obj.send(message2, type=3)
 
     def choose_card(self):
         while True:
@@ -193,7 +210,20 @@ class Player:
             obj.send(message, type=2)
 
     def get_update_hand(self):
-        pass  #TODO 接收更新，默认在每个回合开始前调用一次，包括游戏开始之初。
+        #TODO 接收更新，默认在每个回合开始前调用一次，包括游戏开始之初。
+        mq = sysv_ipc.MessageQueue(self.queue, type=2)
+        while True:
+            message, _ = mq.receive()
+            value = message.decode()
+            parts = value.split(":")
+            if len(parts) == 2:
+                player_id = int(parts[0])
+                cards_hand = parts[1]
+                self.hands[player_id] = self.convert_dataflow_to_list(
+                    cards_hand)
+            if not value:
+                break
+            print("Received:", value)
 
     def give_information(self):
         while True:
@@ -255,8 +285,14 @@ class Player:
                 obj.send(message)
 
             message = "exit".encode()
+            if self.player_id == self.nb_players:
+                message2 = str(1).encode()
+            else:
+                message2 = str(self.player_id + 1).encode()
+
             for name, obj in self.objects_dict.items():
-                obj.send(message)
+                obj.send(message2, type=3)
+                obj.send(message, type=1)
 
             break
 
@@ -267,13 +303,11 @@ class Player:
         print("token fuse: ", self.fuse_tokens)
         print("constructing suits: ", )
 
-    # def handle_win(self, sig, frame):
-    #     self.end.set()
-    #     print("you won, the game ends")
+    def handle_win(self, sig, frame):
+        print("you won, the game ends")
 
-    # def handle_loss(self, sig, frame):
-    #     self.end.set()
-    #     print("you lose, the game ends")
+    def handle_loss(self, sig, frame):
+        print("you lose, the game ends")
 
     def convert_dataflow_to_list(self, flow):
         tuplized = flow.replace("(", "").replace(")", "").split(",")
@@ -282,9 +316,7 @@ class Player:
 
 if __name__ == "__main__":
     player = Player()
-    # with Pool(2) as pool:
-    #     pool.apply_async(player.display, ())
-    #     pool.apply_async(player.connect_to_game, ())
-    #     pool.apply_async(player.connect_to_mq, ())
-    #     pool.apply_async(player.play_game, ())
-    # 改成非阻塞的threads
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        executor.map(player.connect_to_game, ())
+        executor.map(player.connect_to_mq, ())
+        executor.map(player.play_game, ())
