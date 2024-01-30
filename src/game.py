@@ -5,6 +5,8 @@ import select
 import struct
 import sysv_ipc
 import random
+import signal
+import sys
 
 
 class Game:
@@ -106,9 +108,19 @@ class Game:
         else:
             return self.deck.pop(0)
 
+    def cleanup_before_exit(self, signal, frame):
+        try:
+            self.server_socket.close()
+            for shm in self.shm_pool:
+                shm.detach()
+        except Exception as e:
+            pass
+        sys.exit(0)
+
 
 if __name__ == "__main__":
     game = Game(2)
+    signal.signal(signal.SIGINT, game.cleanup_before_exit)
     # game.run()
     processes = []
     processes.append(Process(target=game.socket_connection, args=()))
