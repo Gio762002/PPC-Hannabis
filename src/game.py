@@ -157,14 +157,16 @@ class Game:
                     fuse_tokens = int(self.fuse_tokens.read(1))
                     self.fuse_tokens.write(f'{fuse_tokens-1}'.encode)
                     if fuse_tokens - 1 <= 0:
-                        os.kill(os.getpid(), signal.SIGUSR2)
+                        for pid in self.pidlist:
+                            os.kill(pid, signal.SIGUSR2)
         win = True
         for (_, topnumber) in top_on_suit:
             if topnumber != 5:
                 win = False
                 break
         if win:
-            os.kill(os.getpid(), signal.SIGUSR1)
+            for pid in self.pidlist:
+                os.kill(pid, signal.SIGUSR1)
 
     def cleanup_before_exit(self, signal, frame):
         try:
