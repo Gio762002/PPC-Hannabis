@@ -132,7 +132,7 @@ class Player:
     def play_game(self):
         while self.gaming == True:
             # before every turn starts, update hands.
-            self.update_hand(self.update_hand)
+            self.get_update_hand()
             if self.turn == 0:  #TODO write the veriifcation of the turn
                 self.play_turn()
 
@@ -151,8 +151,9 @@ class Player:
     def play_card(self):
         old_card_indice = self.choose_card()
         new_card = self.draw_card()
-        new_hand = self.replace_card(old_card_indice, new_card)
-        self.update_hand(new_hand)
+        self.replace_card(old_card_indice, new_card)
+        self.update_hand()
+        self.check_if_added_to_suit(new_card)
 
     def choose_card(self):
         while True:
@@ -184,9 +185,11 @@ class Player:
     def replace_card(self, old_card_indice, new_card):
         self.hands[self.player_id][old_card_indice] = new_card
 
-    def update_hand(self, new_hand):  #是不是应该明确谁是发送者
+    def update_hand(self):  #是不是应该明确谁是发送者
         # new_hand is like "(1,2),(0,3),(0,4),(2,1),(1,5)"
-        message = str(new_hand).encode()
+        new_hand = self.hands[self.player_id]
+        new_hand = str(new_hand)[1:-1]
+        message = new_hand.encode()
         for name, obj in self.objects_dict.items():
             obj.send(message, type=2)
 
@@ -198,6 +201,44 @@ class Player:
     #     for name, obj in self.objects_dict.items():
     #         obj.send(message, type=2)
     #不用特意写成函数，因为是shm随时可用
+
+    def check_if_added_to_suit(self, new_card):
+        (color, number) = new_card
+        top_on_suit = []
+        bottoms = [0, 5, 10, 15, 20, 25, 30, 35]
+        for i in bottoms:
+            j = i
+            while True:
+                now = self.suits.read(1, j)
+                if now != ' ':
+                    j += 1
+                else:
+                    top_on_suit.append((i / 5, j - i))
+                    break
+        for (topcolor, topnumber) in top_on_suit:
+            if topcolor == color:
+                if topnumber == number - 1:  # success
+                    self.suits.write(b'1', topcolor * 5 + topnumber + 1)
+                    ind = top_on_suit.index(topcolor, topnumber)
+                    top_on_suit[ind] = (topcolor, number)
+                    # we dont need to write the value, just sth != ' '
+                    if number == 5:
+                        information_tokens = int(
+                            self.information_tokens.read(1))
+                        self.information_tokens.write(
+                            f'{information_tokens+1}'.encode)
+                else:
+                    fuse_tokens = int(self.fuse_tokens.read(1))
+                    self.fuse_tokens.write(f'{fuse_tokens-1}'.encode)
+                    if fuse_tokens - 1 <= 0:
+                        pass  #TODO: signal game over: lose
+        win = True
+        for (_, topnumber) in top_on_suit:
+            if topnumber != 5:
+                win = False
+                break
+        if win:
+            pass  #TODO : signal game over: win
 
     def give_information(self):
         while True:
