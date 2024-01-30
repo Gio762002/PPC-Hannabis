@@ -16,12 +16,12 @@ class Game:
         self.number_of_players = number_of_players
         self.gaming = True
         self.queuekey = 128
-        self.interqueue = Queue()
+        self.create_message_queue()
+        self.create_shared_memory()
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         self.deck = []
-        # self.shuffle_deck()
-        self.create_shared_memory()
+        self.shuffle_deck()
 
     def create_shared_memory(self):
         self.shm_pool = []
@@ -41,6 +41,9 @@ class Game:
 
         for shm in self.shm_pool:
             shm.attach()
+
+    def create_message_queue(self):
+        mq = sysv_ipc.MessageQueue(self.queuekey, sysv_ipc.IPC_CREAT)
 
     def socket_connection(self):
         HOST = "localhost"
@@ -65,30 +68,26 @@ class Game:
                 break
 
     def holding(self, s):
-        while True:
+        while self.gaming:
             try:
-            #     if not self.interqueue.empty(
-            #     ):  # Check if the queue is not empty
-            #         req = self.interqueue.get_nowait()  # or queue.get()
-            #         if req == "draw":
-            #             self.s.sendall(req.encode())
-            #             res = self.s.recv(10)
-            #             res = res.decode()
-            #             self.interqueue.put(res)
-            # except Exception as e:
-            #     print("Error in interprocess communication: ", e)
+                data = s.recv(1024)
+                if data.decode() == "draw":
+                    new_card = self.distribute_card()
+                    s.send(str(new_card).encode())
+            except Exception as e:
+                print("Error while holding the game :", e)
 
     def init_game(self, client_socket, id_player):
-        with client_socket as s:
-            try:
-                s.sendall(struct.pack("i", self.number_of_players))
-                s.sendall(struct.pack("i", id_player))
-                self.ack(s)
-                cards = str(self.distribute_card(True))[1:-1]
-                s.sendall(cards.encode())
-                self.ack(s)
-            except Exception as e:
-                print("Error initializing the game : ", e)
+        s = client_socket
+        try:
+            s.sendall(struct.pack("i", self.number_of_players))
+            s.sendall(struct.pack("i", id_player))
+            self.ack(s)
+            cards = str(self.distribute_card(True))[1:-1]
+            s.sendall(cards.encode())
+            self.ack(s)
+        except Exception as e:
+            print("Error initializing the game : ", e)
 
     def shuffle_deck(self):
         reserved_suit = [1, 1, 1, 2, 2, 3, 3, 4, 4, 5]
@@ -106,9 +105,6 @@ class Game:
             return [self.deck.pop(0) for i in range(5)]
         else:
             return self.deck.pop(0)
-
-    def connect_to_message_queue(self):
-        mq = sysv_ipc.MessageQueue(self.queuekey, sysv_ipc.IPC_CREAT)
 
 
 if __name__ == "__main__":
