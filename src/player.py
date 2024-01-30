@@ -3,10 +3,10 @@ from multiprocessing import Process, Queue, shared_memory, Pool
 from threading import Event
 import concurrent.futures
 import socket
-import select
-import numpy as np
+import signal
 import struct
 import sysv_ipc
+import os
 
 
 class Player:
@@ -20,6 +20,10 @@ class Player:
         # self.interqueue = Queue()  # a queue for inter-process communication
         self.draw_req = Event()
         self.hands = {1: [], 2: [], 3: [], 4: []}
+
+        signal.signal(signal.SIGUSR1, self.handle_win)
+        signal.signal(signal.SIGUSR2, self.handle_loss)
+        self.end = Event()
 
     def attach_to_shm(self):
         self.shm_pool = []
@@ -44,7 +48,9 @@ class Player:
         print("connected to game host")
         self.ack = False
         self.init_game()
-        # self.interp_com()
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            executor.submit(self.holding)
+            executor.submit(self.holding2)
 
     def ack(self, send=True):
         if send:
@@ -85,20 +91,6 @@ class Player:
         else:
             self.ack(True)
 
-    # def interp_com(self):
-    #     while True:
-    #         try:
-    #             if not self.interqueue.empty(
-    #             ):  # Check if the queue is not empty
-    #                 req = self.interqueue.get_nowait()  # or queue.get()
-    #                 if req == "draw":
-    #                     self.client_socket.sendall(req.encode())
-    #                     res = self.client_socket.recv(10)
-    #                     res = res.decode()
-    #                     self.interqueue.put(res)
-    #         except Exception as e:
-    #             print("Error in interprocess communication: ", e)
-    # if we used multi-thread, we dont need this, we need only event
     def holding(self):
         while self.gaming:
             self.draw_req.wait()
@@ -107,9 +99,15 @@ class Player:
             self.new_card = data.decode()
             self.draw_req.clear()
 
-    def connect_to_mq(
-        self
-    ):  # connect to the queue created by game for exchanging information between processes
+    def holding2(self):
+        while self.gaming:
+            self.end.wait()
+            self.client_socket.sendall(b'end')
+            self.end.clear()
+            self.gaming = False
+
+    def connect_to_mq(self):
+        # connect to the queue created by game for exchanging information between processes
         self.objects_dict = {}
         for i in range(self.nb_players):
             object_name = f'object_{i}'
@@ -196,12 +194,6 @@ class Player:
     def get_update_hand(self):
         pass  #TODO 接收更新，默认在每个回合开始前调用一次，包括游戏开始之初。
 
-    # def update_tokens(self, value):
-    #     message = str(value).encode()
-    #     for name, obj in self.objects_dict.items():
-    #         obj.send(message, type=2)
-    #不用特意写成函数，因为是shm随时可用
-
     def check_if_added_to_suit(self, new_card):
         (color, number) = new_card
         top_on_suit = []
@@ -231,14 +223,14 @@ class Player:
                     fuse_tokens = int(self.fuse_tokens.read(1))
                     self.fuse_tokens.write(f'{fuse_tokens-1}'.encode)
                     if fuse_tokens - 1 <= 0:
-                        pass  #TODO: signal game over: lose
+                        os.kill(os.getpid(), signal.SIGUSR2)
         win = True
         for (_, topnumber) in top_on_suit:
             if topnumber != 5:
                 win = False
                 break
         if win:
-            pass  #TODO : signal game over: win
+            os.kill(os.getpid(), signal.SIGUSR1)
 
     def give_information(self):
         while True:
@@ -312,6 +304,14 @@ class Player:
         print("token fuse: ", self.fuse_tokens)
         print("constructing suits: ", )
 
+    def handle_win(self, sig, frame):
+        self.end.set()
+        print("you won, the game ends")
+
+    def handle_loss(self, sig, frame):
+        self.end.set()
+        print("you lose, the game ends")
+
     def convert_dataflow_to_list(self, flow):
         tuplized = flow.replace("(", "").replace(")", "").split(",")
         return ([tuple(map(int, tpl.split(','))) for tpl in tuplized])
@@ -319,8 +319,9 @@ class Player:
 
 if __name__ == "__main__":
     player = Player()
-    with Pool(2) as pool:
-        pool.apply_async(player.display, ())
-        pool.apply_async(player.connect_to_game, ())
-        pool.apply_async(player.connect_to_mq, ())
-        pool.apply_async(player.play_game, ())
+    # with Pool(2) as pool:
+    #     pool.apply_async(player.display, ())
+    #     pool.apply_async(player.connect_to_game, ())
+    #     pool.apply_async(player.connect_to_mq, ())
+    #     pool.apply_async(player.play_game, ())
+    # 改成非阻塞的threads

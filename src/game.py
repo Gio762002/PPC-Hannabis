@@ -45,7 +45,7 @@ class Game:
             shm.attach()
 
     def create_message_queue(self):
-        mq = sysv_ipc.MessageQueue(self.queuekey, sysv_ipc.IPC_CREAT)
+        self.mq = sysv_ipc.MessageQueue(self.queuekey, sysv_ipc.IPC_CREAT)
 
     def socket_connection(self):
         HOST = "localhost"
@@ -76,6 +76,9 @@ class Game:
                 if data.decode() == "draw":
                     new_card = self.distribute_card()
                     s.send(str(new_card).encode())
+                elif data.decode() == "end":
+                    self.end_game()
+
             except Exception as e:
                 print("Error while holding the game :", e)
 
@@ -90,6 +93,12 @@ class Game:
             self.ack(s)
         except Exception as e:
             print("Error initializing the game : ", e)
+
+    def end_game(self):
+        self.server_socket.close()
+        self.mq.remove()
+        for shm in self.shm_pool:
+            shm.detach()
 
     def shuffle_deck(self):
         reserved_suit = [1, 1, 1, 2, 2, 3, 3, 4, 4, 5]
